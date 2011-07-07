@@ -131,6 +131,7 @@ def load_fabfile(path, importer=None):
     dictionary of ``{'name': callable}`` containing all callables which pass
     the "is a Fabric task" test.
     """
+    classic_tasks = None
     if importer is None:
         importer = __import__
     # Get directory and fabfile name
@@ -162,12 +163,13 @@ def load_fabfile(path, importer=None):
         sys.path.insert(index + 1, directory)
         del sys.path[0]
 
-    # Actually load tasks
-    docstring, new_style, classic = load_tasks_from_module(imported)
-    tasks = new_style if state.env.new_style_tasks else classic
-    # Clean up after ourselves
-    _seen.clear()
-    return docstring, tasks
+    # Try to load classic-style tasks if no new-style tasks were auto-registered.
+    if not Task.all():
+        _, classic_tasks = load_tasks_from_module(imported)
+        # Clean up after ourselves
+        _seen.clear()
+
+    return imported.__doc__, classic_tasks
 
 
 def load_tasks_from_module(imported):
@@ -184,30 +186,21 @@ def load_tasks_from_module(imported):
     # Return a two-tuple value.  First is the documentation, second is a
     # dictionary of callables only (and don't include Fab operations or
     # underscored callables)
-    new_style, classic = extract_tasks(imported_vars)
-    return imported.__doc__, new_style, classic
+    return imported.__doc__, extract_tasks(imported_vars)
 
 
 def extract_tasks(imported_vars):
     """
     Handle extracting tasks from a given list of variables
     """
-    new_style_tasks = defaultdict(dict)
-    classic_tasks = {}
-    if 'new_style_tasks' not in state.env:
-        state.env.new_style_tasks = False
+    tasks = {}
     for tup in imported_vars:
         name, obj = tup
-        if is_task_object(obj):
-            state.env.new_style_tasks = True
-            new_style_tasks[obj.name] = obj
-        elif is_task(tup):
-            classic_tasks[name] = obj
+        if is_task(tup):
+            tasks[name] = obj
         elif is_task_module(obj):
-            docs, newstyle, classic = load_tasks_from_module(obj)
-            for task_name, task in newstyle.items():
-                new_style_tasks[name][task_name] = task
-    return (new_style_tasks, classic_tasks)
+            docs, tasks = load_tasks_from_module(obj)
+    return tasks
 
 
 def is_task_module(a):
@@ -649,8 +642,11 @@ def main():
         # tweaks to env values) and put its commands in the shared commands
         # dict
         if fabfile:
-            docstring, callables = load_fabfile(fabfile)
-            state.commands.update(callables)
+            docstring, classic_tasks = load_fabfile(fabfile)
+            if classic_tasks:
+                state.commands.update(classic_tasks)
+            else:
+                state.commands.update(Task.all())
 
         # Abort if no commands found
         if not state.commands and not remainder_arguments:

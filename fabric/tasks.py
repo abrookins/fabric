@@ -18,8 +18,42 @@ class Task(object):
 
     # TODO: make it so that this wraps other decorators as expected
 
+    def __init__(self):
+        Task.register(self)
+
     def run(self):
         raise NotImplementedError
+
+    @classmethod
+    def _init_task_registry(cls):
+        """ Create a task registry if one does not already exist. """
+        if not hasattr(cls, "_registry"):
+            cls._registry = dict()
+
+    @classmethod
+    def register(cls, task):
+        """ Add a Task to the task registry. """
+        cls._init_task_registry()
+        cls._registry[task.name] = task
+
+    @classmethod
+    def unregister(cls, task):
+        """ Remove a task from the task registry. """
+        cls._init_task_registry()
+        if task.name in cls._registry:
+            del cls._registry[task.name]
+       
+    @classmethod
+    def all(cls):
+        """ Return all the tasks in the task registry. """
+        cls._init_task_registry()
+        return cls._registry.items()
+
+    @classmethod
+    def get_by_name(cls, name):
+        """ Get a task from the registry by name. """
+        cls._init_task_registry()
+        return cls._registry[name]
 
 
 class WrappedCallableTask(Task):
@@ -32,10 +66,10 @@ class WrappedCallableTask(Task):
     .. versionadded:: 1.1
     """
     def __init__(self, callable):
-        super(WrappedCallableTask, self).__init__()
         self.wrapped = callable
         self.__name__ = self.name = callable.__name__
         self.__doc__ = callable.__doc__
+        super(WrappedCallableTask, self).__init__()
 
     def __call__(self, *args, **kwargs):
         return self.run(*args, **kwargs)
